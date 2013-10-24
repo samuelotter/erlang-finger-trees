@@ -4,3 +4,10 @@ deps
 *.beam
 *.plt
 erl_crash.dump
+ebin
+doc/*.html
+doc/*.png
+doc/*.css
+doc/edoc-info
+*.sublime-project
+*.sublime-workspace
