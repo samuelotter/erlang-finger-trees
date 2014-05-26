@@ -11,3 +11,4 @@ doc/*.css
 doc/edoc-info
 *.sublime-project
 *.sublime-workspace
+*~
