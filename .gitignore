@@ -12,3 +12,11 @@ doc/edoc-info
 *.sublime-project
 *.sublime-workspace
 *~
+all_runs.html
+ct_default.css
+ct_log_cache
+ct_run*/*
+index.html
+jquery-latest.js
+jquery.tablesorter.min.js
+variables*
