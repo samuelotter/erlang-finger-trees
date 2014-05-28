@@ -15,6 +15,7 @@
         , from_list/2
         , value/2
         , last/1
+        , locate/3
         , lpop/2
         , lpush/3
         , new/0
@@ -25,31 +26,32 @@
         ]).
 -compile({no_auto_import,[length/1]}).
 
--include("ftree.hrl").
+-include("ft_types.hrl").
 
--type ftree(E)   :: #ft_deep{} |
-                       %% left :: list(E),
-                       %%       middle :: ftree(E),
-                       %%      right :: list(E)} |
-                    #ft_node3{a :: E, b :: E, c :: E} |
-                    #ft_node2{a :: E, b :: E} |
-                    #ft_empty{} |
-                    #ft_single{element :: E}.
--type ftree()    :: ftree(any()).
+-export_type([ ftree/0
+             ]).
+
+-opaque ftree() :: #ft_empty{} |
+                   #ft_single{} |
+                   #ft_node2{} |
+                   #ft_node3{} |
+                   #ft_deep{}.
 
 -callback value_of(Elements :: list()) ->
     any().
 -callback merge(Values :: list()) ->
     any().
+-callback pick(Value :: any(), NodeValue :: any(), Node :: ftree()) ->
+    any().
 
--type callback() :: atom.
+%%-type module() :: atom.
 
 %% @doc Creates a new empty finger-tree.
 -spec new() -> ftree().
 new() -> #ft_empty{}.
 
 %% @doc Inserts a new element to the left (at the front).
--spec lpush(callback(), E, ftree(E)) -> ftree(E).
+-spec lpush(module(), _, ftree()) -> ftree().
 lpush(_Callback, Elem, #ft_empty{}) ->
     #ft_single{element = Elem};
 lpush(Callback, Elem, #ft_single{element = Existing}) ->
@@ -66,18 +68,18 @@ lpush(Callback, Elem, Tree = #ft_deep{ left   = [L0, L1, L2, L3],
                          , b = L2
                          , c = L3},
     NewMiddle = lpush(Callback, Node, Middle),
-    Tree#ft_deep{value  = measure(Callback, NewLeft, NewMiddle, Right),
+    Tree#ft_deep{value  = measure(Callback, NewLeft ++ [NewMiddle] ++ Right),
                  left   = NewLeft,
                  middle = NewMiddle};
 lpush(Callback, Elem, Deep = #ft_deep{ left   = Left
                                      , middle = Middle
                                      , right  = Right}) ->
-    Deep#ft_deep{ value = measure(Callback, Elem, Left, Middle, Right)
+    Deep#ft_deep{ value = measure(Callback, [Elem | Left ++ [Middle] ++ Right])
                 , left  = [Elem | Left]}.
 
 
 %% @doc Inserts a new element to the right (at the back).
--spec rpush(callback(), E, ftree(E)) -> ftree(E).
+-spec rpush(module(), _, ftree()) -> ftree().
 rpush(_Callback, Elem, #ft_empty{}) ->
     #ft_single{element = Elem};
 rpush(Callback, NewElem, #ft_single{element=Elem}) ->
@@ -88,26 +90,26 @@ rpush(Callback, Elem, Tree = #ft_deep{left   = Left,
                                       right  = [R0, R1, R2, R3],
                                       middle = Middle}) ->
     NewMiddle = rpush(Callback,
-                      #ft_node3{ value = value(Callback, [R1, R2, R3])
+                      #ft_node3{ value = measure(Callback, [R1, R2, R3])
                                , a = R1
                                , b = R2
                                , c = R3},
                       Middle),
-    NewRight = [Elem | R0],
-    Tree#ft_deep{value = measure(Callback, Left, NewMiddle, NewRight),
+    NewRight = [Elem, R0],
+    Tree#ft_deep{value = measure(Callback, Left ++ [NewMiddle] ++ NewRight),
                  middle = NewMiddle,
                  right = NewRight};
 rpush(Callback, Elem, Tree = #ft_deep{ left = Left
                                      , middle = Middle
                                      , right = Right}) ->
-    Tree#ft_deep{ value = measure(Callback, Elem, Left, Middle, Right)
+    Tree#ft_deep{ value = measure(Callback, [Elem | Left ++ [Middle] ++ Right])
                 , right = [Elem | Right]}.
 
 %% @doc Removes and returns the first element.
--spec lpop(callback(), ftree(E)) -> ftree(E).
+-spec lpop(module(), ftree()) -> ftree().
 lpop(_Callback, #ft_empty{}) -> #ft_empty{};
 lpop(_Callback, #ft_single{element = Elem}) -> {Elem, #ft_empty{}};
-lpop(Callback, Node = #ft_deep{ left = [Elem | LTail]
+lpop(Callback, Node = #ft_deep{ value = _, left = [Elem | LTail]
                               , middle = Middle
                               , right = Right}) ->
     Tail = case LTail of
@@ -121,7 +123,7 @@ lpop(Callback, Node = #ft_deep{ left = [Elem | LTail]
     {Elem, Tail}.
 
 %% @doc Removes and returns the last element.
--spec rpop(callback(), ftree(E)) -> ftree(E).
+-spec rpop(module(), ftree()) -> ftree().
 rpop(_Callback, #ft_empty{}) -> #ft_empty{};
 rpop(_Callback, #ft_single{element = Elem}) -> {Elem, #ft_empty{}};
 rpop(Callback, Node = #ft_deep{ left = Left
@@ -149,7 +151,7 @@ rpushlist(Callback, List, Tree) ->
 %%      with the first one. The result from each call is passed to the
 %%      next in the second argument. The result of the last call to
 %%      Fun is returned from the function.
--spec foldl(fun((E, A) -> A), A, ftree(E)) -> A.
+-spec foldl(fun((_, A) -> A), A, ftree()) -> A.
 foldl(Fun, Acc, #ft_node2{a = A, b = B}) ->
     foldl(Fun, foldl(Fun, Acc, A), B);
 foldl(Fun, Acc, #ft_node3{a = A, b = B, c = C}) ->
@@ -173,7 +175,7 @@ foldl(Fun, Acc, X) ->
 %%      with the last one. The result from each call is passed to the
 %%      next in the second argument. The result of the last call to
 %%      Fun is returned from the function.
--spec foldr(fun((E, A) -> A), A, ftree(E)) -> A.
+-spec foldr(fun((_, A) -> A), A, ftree()) -> A.
 foldr(Fun, Acc0, #ft_node2{a = A, b = B}) ->
     foldr(Fun, foldr(Fun, Acc0, B), A);
 foldr(Fun, Acc0, #ft_node3{a = A, b = B, c = C}) ->
@@ -190,14 +192,14 @@ foldr(Fun, Acc0, Elem) ->
     Fun(Elem, Acc0).
 
 %% @doc Returns a list with all the elements.
--spec to_list(ftree(E)) -> list(E).
+-spec to_list(ftree()) -> list().
 to_list(Tree) ->
     lists:reverse(foldl(fun (V, Acc) -> [V | Acc] end, [], Tree)).
 
 %% @doc Creates a new tree from a list.
--spec from_list(callback(), list(E)) -> ftree(E).
+-spec from_list(module(), list()) -> ftree().
 from_list(Callback, List) ->
-    lists:foldr(fun (X, Tree) -> lpush(Callback, X, Tree) end, new(), List).
+    lists:foldl(fun (X, Tree) -> rpush(Callback, X, Tree) end, new(), List).
 
 %% @doc Creates a new deep node.
 deep(Callback, Left, Middle, Right) ->
@@ -245,7 +247,7 @@ split(Callback, Predicate, I, #ft_deep{left = Left, middle = Middle, right = Rig
             case Predicate(VM) of
                 true ->
                     {ML, MX, MR} = split(Callback, Predicate, VPR, Middle),
-                    {L, X, R} = split(Callback, Predicate, Callback([VPR, ML]), [MX]),
+                    {L, X, R} = split(Callback, Predicate, measure(Callback, [VPR, ML]), [MX]),
                     {deepr(Callback, Left, ML, L), X, deepl(Callback, R, MR, Right)};
                 false ->
                     {L, X, R} = split(Callback, Predicate, I, Right),
@@ -254,12 +256,12 @@ split(Callback, Predicate, I, #ft_deep{left = Left, middle = Middle, right = Rig
     end.
 
 %% @doc Returns the first element.
--spec first(ftree(E)) -> E.
+-spec first(ftree()) -> any().
 first(#ft_single{element = First})  -> First;
 first(#ft_deep{left = [First | _]}) -> First.
 
 %% @doc Returns the last element.
--spec last(ftree(E)) -> E.
+-spec last(ftree()) -> any().
 last(#ft_single{element = Last})   -> Last;
 last(#ft_deep{right = [Last | _]}) -> Last.
 
@@ -290,7 +292,7 @@ to_nodes(Callback, [A, B, C | Tail]) ->
     ].
 
 %% @doc Appends a tree to another.
--spec append(callback(), ftree(E), list(E), ftree(E)) -> ftree(E).
+-spec append(module(), ftree(), list(), ftree()) -> ftree().
 append(Callback, #ft_empty{}, Elems, Tree) ->
     lpushlist(Callback, Elems, Tree);
 append(Callback, Tree, Elems, #ft_empty{}) ->
@@ -308,13 +310,13 @@ append(Callback, #ft_deep{left = L1, middle = M1, right = R1},
              middle = NewMiddle,
              right = R2}.
 
--spec append(callback(), ftree(E), ftree(E)) -> ftree(E).
+-spec append(module(), ftree(), ftree()) -> ftree().
 append(Callback, T1, T2) ->
     append(Callback, T1, [], T2).
 
 %% @doc Generates a tree with an integer sequence.
--spec seq(callback(), ftree(integer()), integer(), integer()) ->
-                 ftree(integer()).
+-spec seq(module(), ftree(), integer(), integer()) ->
+                 ftree().
 seq(Callback, Tree, From, From) ->
     lpush(Callback, From, Tree);
 seq(Callback, Tree0, From, To) ->
@@ -322,12 +324,38 @@ seq(Callback, Tree0, From, To) ->
     seq(Callback, Tree, From, To - 1).
 
 %% @doc Generates a tree with an integer sequence.
--spec seq(callback(), integer(), integer()) -> ftree(integer()).
+-spec seq(module(), integer(), integer()) -> ftree().
 seq(Callback, From, To) ->
     seq(Callback, new(), From, To).
 
+-spec locate(module(), V, ftree()) -> V.
+locate(Callback, Value, #ft_single{element = Element}) ->
+    locate(Callback, Value, Element);
+locate(Callback, Value, #ft_deep{ left = Left
+                                , middle = Middle
+                                , right = Right}) ->
+    pick(Callback, Value, Left ++ [Middle] ++ Right);
+locate(Callback, Value, #ft_node2{a = A, b = B}) ->
+    pick(Callback, Value, [A, B]);
+locate(Callback, Value, #ft_node3{a = A, b = B, c = C}) ->
+    pick(Callback, Value, [A, B, C]);
+locate(Callback, Value, Element) ->
+    Value = value(Callback, Element),
+    Element.
+
+pick(_Callback, _Value, []) ->
+    not_found;
+pick(Callback, Value, [Node | Nodes]) ->
+    NodeValue = value(Callback, Node),
+    case Callback:pick(Value, NodeValue, Node) of
+        {pick, Node} ->
+            locate(Callback, Value, Node);
+        {continue, NewValue} ->
+            pick(Callback, NewValue, Nodes)
+    end.
+
 %% @doc Returns the measurement of a node.
--spec value(callback(), ftree()) -> any().
+-spec value(module(), ftree() | any()) -> any().
 value(Callback, #ft_empty{}) ->
     Callback:zero();
 value(Callback, #ft_single{element=Elem}) ->
@@ -341,21 +369,8 @@ value(_Callback, #ft_node3{value=Value}) ->
 value(Callback, Element) ->
     Callback:value_of(Element).
 
-measure(Callback, Elements) ->
+measure(Callback, Elements) when is_list(Elements) ->
     Values = [value(Callback, Elem) || Elem <- Elements],
-    Callback:merge(Values).
-
-measure(Callback, Left, Middle, Right) ->
-    LeftValues = [value(Callback, E) || E <- Left],
-    MiddleValue = value(Callback, Middle),
-    RightValues = [value(Callback, E) || E <- Right],
-    Values = LeftValues ++ [MiddleValue] ++ RightValues,
-    Callback:merge(Values).
-
-measure(Callback, Elem, Left, Middle, Right) ->
-    LeftValues = [value(Callback, E) || E <- Left],
-    MiddleValue = value(Callback, Middle),
-    RightValues = [value(Callback, E) || E <- Right],
-    ElemValue = value(Callback, Elem),
-    Values = [ElemValue] ++ LeftValues ++ [MiddleValue] ++ RightValues,
-    Callback:merge(Values).
+    Callback:merge(Values);
+measure(Callback, Element) ->
+    value(Callback, Element).

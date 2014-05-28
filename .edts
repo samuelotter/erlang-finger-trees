@@ -1,0 +1,4 @@
+:name "erlang-finger-trees"
+:node-sname "ftree"
+:lib-dirs '("deps" "test")
+:app-include-dirs '("include")

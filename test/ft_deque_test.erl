@@ -14,8 +14,8 @@ measure_test_() ->
     , ?_assertEqual(2, ft_deque:measure([x, y]))
     , ?_assertEqual(3, ft_deque:measure([x, y, z]))
     ].
-    
-length_test_() ->    
+
+length_test_() ->
     Deque0 = ft_deque:new(),
     Deque1 = ft_deque:rpush(1, Deque0),
     Deque2 = ft_deque:rpush(2, Deque1),
